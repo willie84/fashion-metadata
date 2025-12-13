@@ -18,16 +18,14 @@ class BulkProcessor:
         Args:
             image_analyzer: ImageAnalyzer instance
             text_generator: TextGenerator instance
-            classifier: ProductClassifier instance
-            attribute_extractor: AttributeExtractor instance
+            classifier: ProductClassifier instance (deprecated, can be None)
+            attribute_extractor: AttributeExtractor instance (deprecated, can be None - redundant with faceted_generator)
             faceted_generator: FacetedMetadataGenerator instance
             vocabulary_manager: Optional VocabularyManager instance
             confidence_scorer: Optional ConfidenceScorer instance
         """
         self.image_analyzer = image_analyzer
         self.text_generator = text_generator
-        self.classifier = classifier
-        self.attribute_extractor = attribute_extractor
         self.faceted_generator = faceted_generator
         self.vocabulary_manager = vocabulary_manager
         self.confidence_scorer = confidence_scorer
@@ -107,12 +105,6 @@ class BulkProcessor:
             csv_data=csv_row
         )
         
-        # Generate classification
-        classification = self.classifier.classify(image_attributes, csv_row)
-        
-        # Extract technical attributes
-        technical = self.attribute_extractor.extract_attributes(image_attributes, csv_row)
-        
         # Generate text (using CSV title if available)
         product_info = {
             'brand': csv_row.get('Brand', ''),
@@ -125,7 +117,6 @@ class BulkProcessor:
         
         description = self.text_generator.generate_description(product_info, image_attributes)
         bullets = self.text_generator.generate_bullet_points(product_info, image_attributes)
-        keywords = self.text_generator.generate_keywords(product_info, image_attributes)
         
         # Compile complete metadata
         metadata = {
@@ -138,18 +129,6 @@ class BulkProcessor:
                 "short_description": description[:150] + '...' if len(description) > 150 else description,
                 "long_description": description,
                 "bullet_points": bullets
-            },
-            
-            # Classification (legacy format for compatibility)
-            "classification": classification,
-            
-            # Technical attributes
-            "technical": technical,
-            
-            # Discovery metadata
-            "discovery": {
-                "keywords": keywords,
-                "related_tags": classification.get('tags', [])[:10]
             },
             
             # Source information

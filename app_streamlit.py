@@ -12,8 +12,6 @@ import pandas as pd
 # Import ML modules
 from models.image_analyzer import ImageAnalyzer
 from models.text_generator import TextGenerator
-from models.classifier import ProductClassifier
-from models.attribute_extractor import AttributeExtractor
 from models.faceted_metadata import FacetedMetadataGenerator
 from models.bulk_processor import BulkProcessor
 from models.vocabulary_manager import VocabularyManager
@@ -41,21 +39,18 @@ def initialize_models():
     try:
         image_analyzer = ImageAnalyzer()
         text_generator = TextGenerator()
-        classifier = ProductClassifier()
-        attribute_extractor = AttributeExtractor()
         faceted_generator = FacetedMetadataGenerator()
         vocabulary_manager = VocabularyManager()
         confidence_scorer = ConfidenceScorer()
         bulk_processor = BulkProcessor(
-            image_analyzer, text_generator, classifier,
-            attribute_extractor, faceted_generator,
+            image_analyzer, text_generator, None,  # classifier removed
+            None,  # attribute_extractor removed (redundant)
+            faceted_generator,
             vocabulary_manager, confidence_scorer
         )
         return {
             'image_analyzer': image_analyzer,
             'text_generator': text_generator,
-            'classifier': classifier,
-            'attribute_extractor': attribute_extractor,
             'faceted_generator': faceted_generator,
             'vocabulary_manager': vocabulary_manager,
             'confidence_scorer': confidence_scorer,
@@ -144,19 +139,12 @@ def single_product_page(models):
                     image_attributes, product_info, None
                 )
                 
-                # Step 3: Classify product
-                classification = models['classifier'].classify(image_attributes, product_info)
-                
-                # Step 4: Extract attributes
-                technical_attributes = models['attribute_extractor'].extract_attributes(image_attributes, product_info)
-                
-                # Step 5: Generate text
+                # Step 3: Generate text
                 title = models['text_generator'].generate_title(product_info, image_attributes)
                 description = models['text_generator'].generate_description(product_info, image_attributes)
                 bullet_points = models['text_generator'].generate_bullet_points(product_info, image_attributes)
-                keywords = models['text_generator'].generate_keywords(product_info, image_attributes)
                 
-                # Step 6: Calculate confidence scores
+                # Step 4: Calculate confidence scores
                 temp_metadata = {
                     'faceted': faceted_metadata,
                     'descriptive': {
@@ -168,7 +156,7 @@ def single_product_page(models):
                     temp_metadata, image_attributes, models['vocabulary_manager'], product_info
                 )
                 
-                # Step 7: Validate against vocabulary
+                # Step 5: Validate against vocabulary
                 validation_results = {}
                 faceted_data = faceted_metadata.get('faceted_metadata', {})
                 flat_facets = faceted_data.get('flat_facets', {})
@@ -199,22 +187,8 @@ def single_product_page(models):
                         'long_description': description,
                         'bullet_points': bullet_points
                     },
-                    'classification': {
-                        'hierarchy': classification['hierarchy'],
-                        'tags': classification['tags'],
-                        'product_type': classification['product_type']
-                    },
-                    'technical': technical_attributes,
-                    'discovery': {
-                        'keywords': keywords,
-                        'related_tags': classification['tags'][:10]
-                    },
                     'confidence_scores': confidence_scores,
                     'validation_results': validation_results,
-                    'product_info': product_info,
-                    'image_analysis': {
-                        'top_matches': image_analysis.get('top_matches', [])[:5]
-                    },
                     'status': 'pending_review',
                     'generated_at': datetime.now().isoformat()
                 }

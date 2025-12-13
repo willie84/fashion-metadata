@@ -75,8 +75,6 @@ fasion-metadata/
 │   ├── image_analyzer.py    # Claude Vision API integration
 │   ├── faceted_metadata.py  # Faceted metadata generation
 │   ├── text_generator.py     # Text generation (titles, descriptions)
-│   ├── classifier.py         # Product classification
-│   ├── attribute_extractor.py # Attribute extraction
 │   ├── bulk_processor.py    # Bulk CSV processing
 │   ├── vocabulary_manager.py # Controlled vocabulary
 │   └── confidence_scorer.py  # Confidence scoring
