@@ -1,0 +1,31 @@
+Title: Automating E-commerce Metadata Creation Using Machine Learning
+
+Type of project: Implementation project
+
+Throughout the course, we have discussed the importance of metadata in information organization. This project leverages machine learning to automate the creation of e-commerce product metadata.
+
+Using fashion product images and minimal text input, the system will generate:
+
+(1) Descriptive metadata - SEO-optimized titles, short/long descriptions, and feature bullet points;
+
+(2) Classification metadata - hierarchical categories (e.g., Women's > Tops > Blouses), searchable tags, and product types;
+
+(3) Technical metadata - structured attributes like color, material, size, pattern, and style extracted from images; and
+
+(4) Discovery metadata - search keywords and related product tags.
+
+I will use transfer learning with pre-trained models (CLIP for image analysis, fine-tuned GPT-2/T5 for text generation) trained on 1,000+ fashion products from the Amazon Fashion dataset available on Kaggle.
+
+This is the data I am thinking to use:
+https://www.kaggle.com/datasets/vikashrajluhaniwal/fashion-images
+
+4-Week Plan:
+
+Week 1: Collect and prepare 250 product dataset.
+
+Week 2: Train classification, attribute extraction, and text generation models.
+
+Week 3: Build web interface integrating all models with export functionality.
+
+Week 4: Execute testing, analyze results, and present findings with live demonstration.
+

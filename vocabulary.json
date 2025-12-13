@@ -1,0 +1,289 @@
+{
+  "gender": [
+    "Men",
+    "Women"
+  ],
+  "item_type": [
+    "Apparel",
+    "Footwear"
+  ],
+  "size": [
+    "XS",
+    "S",
+    "M",
+    "L",
+    "XL",
+    "XXL"
+  ],
+  "categories": {
+    "Footwear": [
+      "Flip Flops",
+      "Sandal",
+      "Shoes"
+    ],
+    "Apparel": [
+      "Apparel Set",
+      "Bottomwear",
+      "Dress",
+      "Innerwear",
+      "Socks",
+      "Topwear"
+    ]
+  },
+  "product_types": {
+    "Footwear": {
+      "Flip Flops": [
+        "Flip Flops"
+      ],
+      "Sandal": [
+        "Sandals",
+        "Sports Sandals"
+      ],
+      "Shoes": [
+        "Casual Shoes",
+        "Flats",
+        "Formal Shoes",
+        "Heels",
+        "Sports Shoes"
+      ]
+    },
+    "Apparel": {
+      "Innerwear": [
+        "Innerwear Vests"
+      ],
+      "Bottomwear": [
+        "Capris",
+        "Churidar",
+        "Jeans",
+        "Leggings",
+        "Salwar",
+        "Shorts",
+        "Skirts",
+        "Trousers"
+      ],
+      "Dress": [
+        "Dresses"
+      ],
+      "Apparel Set": [
+        "Clothing Set",
+        "Kurta Sets"
+      ],
+      "Socks": [
+        "Booties"
+      ],
+      "Topwear": [
+        "Blazers",
+        "Jackets",
+        "Kurtas",
+        "Lehenga Choli",
+        "Rompers",
+        "Shirts",
+        "Sweatshirts",
+        "Tops",
+        "Tshirts",
+        "Waistcoat"
+      ]
+    }
+  },
+  "colors": [
+    "Beige",
+    "Black",
+    "Blue",
+    "Bronze",
+    "Brown",
+    "Charcoal",
+    "Copper",
+    "Cream",
+    "Gold",
+    "Green",
+    "Grey",
+    "Grey Melange",
+    "Khaki",
+    "Lavender",
+    "Lime Green",
+    "Magenta",
+    "Maroon",
+    "Metallic",
+    "Multi",
+    "Mushroom Brown",
+    "Mustard",
+    "Navy Blue",
+    "Nude",
+    "Off White",
+    "Olive",
+    "Orange",
+    "Peach",
+    "Pink",
+    "Purple",
+    "Red",
+    "Rust",
+    "Sea Green",
+    "Silver",
+    "Tan",
+    "Taupe",
+    "Teal",
+    "Turquoise Blue",
+    "White",
+    "Yellow"
+  ],
+  "usages": [
+    "Casual",
+    "Ethnic",
+    "Formal",
+    "Party",
+    "Smart Casual",
+    "Sports"
+  ],
+  "brands": [
+    "ADIDAS",
+    "ANT",
+    "ASICS",
+    "Allen",
+    "Ant",
+    "Arrow",
+    "Asics",
+    "Avengers",
+    "Basics",
+    "Bata",
+    "Batman",
+    "Ben",
+    "Btwin",
+    "Buckaroo",
+    "Carlton",
+    "Catwalk",
+    "Chhota",
+    "Clarks",
+    "Cobblerz",
+    "Converse",
+    "Coolers",
+    "Crocs",
+    "DC",
+    "Decathlon",
+    "Disney",
+    "Do",
+    "Doodle",
+    "Enroute",
+    "Estd.",
+    "F",
+    "FILA",
+    "Fabindia",
+    "Fila",
+    "Filac",
+    "Flying",
+    "Force",
+    "Fortune",
+    "Franco",
+    "GAS",
+    "Ganuchi",
+    "Gas",
+    "Gini",
+    "Giny",
+    "Gliders",
+    "Globalite",
+    "Grendha",
+    "HM",
+    "Hannah",
+    "ID",
+    "Inc"
+  ],
+  "style_hierarchy": {
+    "Casual": {
+      "Everyday": [
+        "Basic",
+        "Comfort",
+        "Relaxed"
+      ],
+      "Streetwear": [
+        "Urban",
+        "Trendy",
+        "Athletic"
+      ],
+      "Weekend": [
+        "Leisure",
+        "Outdoor",
+        "Active"
+      ],
+      "Smart Casual": [
+        "Polished",
+        "Refined",
+        "Elevated"
+      ]
+    },
+    "Formal": {
+      "Business": [
+        "Professional",
+        "Corporate",
+        "Office"
+      ],
+      "Evening": [
+        "Elegant",
+        "Sophisticated",
+        "Dressy"
+      ],
+      "Special Occasion": [
+        "Party",
+        "Wedding",
+        "Event"
+      ]
+    },
+    "Sporty": {
+      "Athletic": [
+        "Performance",
+        "Training",
+        "Gym"
+      ],
+      "Active": [
+        "Outdoor",
+        "Hiking",
+        "Running"
+      ],
+      "Athleisure": [
+        "Comfort",
+        "Stylish",
+        "Versatile"
+      ]
+    },
+    "Ethnic": {
+      "Traditional": [
+        "Classic",
+        "Cultural",
+        "Heritage"
+      ],
+      "Fusion": [
+        "Modern",
+        "Contemporary",
+        "Blended"
+      ]
+    }
+  },
+  "materials": [
+    "Cotton",
+    "Polyester",
+    "Denim",
+    "Leather",
+    "Silk",
+    "Wool",
+    "Linen",
+    "Rayon",
+    "Spandex",
+    "Nylon",
+    "Viscose",
+    "Modal",
+    "Bamboo",
+    "Hemp"
+  ],
+  "patterns": [
+    "Solid",
+    "Striped",
+    "Floral",
+    "Geometric",
+    "Polka Dot",
+    "Plaid",
+    "Abstract",
+    "Animal Print",
+    "Paisley",
+    "Checkered",
+    "Dotted",
+    "Plain"
+  ]
+}
