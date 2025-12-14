@@ -11,15 +11,13 @@ from pathlib import Path
 class BulkProcessor:
     """Processes bulk uploads from CSV files"""
     
-    def __init__(self, image_analyzer, text_generator, classifier, attribute_extractor, faceted_generator, vocabulary_manager=None, confidence_scorer=None):
+    def __init__(self, image_analyzer, text_generator, faceted_generator, vocabulary_manager=None, confidence_scorer=None):
         """
         Initialize bulk processor
         
         Args:
-            image_analyzer: ImageAnalyzer instance
+            image_analyzer: ImageAnalyzer instance (uses Claude Vision API)
             text_generator: TextGenerator instance
-            classifier: ProductClassifier instance (deprecated, can be None)
-            attribute_extractor: AttributeExtractor instance (deprecated, can be None - redundant with faceted_generator)
             faceted_generator: FacetedMetadataGenerator instance
             vocabulary_manager: Optional VocabularyManager instance
             confidence_scorer: Optional ConfidenceScorer instance
@@ -68,74 +66,123 @@ class BulkProcessor:
     
     def process_single_product(self, csv_row, images_dir=None):
         """
-        Process a single product from CSV row
+        Process a single product from CSV row - replicates single image flow
+        
+        CSV should only contain: Gender, Brand, Image (path or URL)
+        Everything else is generated automatically using Claude Vision API
         
         Args:
-            csv_row: Dictionary with CSV row data
-            images_dir: Directory containing images
+            csv_row: Dictionary with CSV row data (must have: Gender, Brand, Image or ImageURL)
+            images_dir: Directory containing images (if Image is a filename)
             
         Returns:
-            dict: Generated metadata
+            dict: Generated metadata (same structure as single product)
         """
-        # Get image path
-        image_file = csv_row.get("Image", "")
+        # Get required inputs: gender, brand, image
+        gender = csv_row.get("Gender", "").strip()
+        brand = csv_row.get("Brand", "").strip()
+        image_file = csv_row.get("Image", "").strip()
+        image_url = csv_row.get("ImageURL", "").strip()
+        
+        if not gender or not brand:
+            raise ValueError("Gender and Brand are required in CSV")
+        
+        # Determine image path/URL
         image_path = None
+        if image_url:
+            # Use URL directly (will be handled by image_analyzer if it supports URLs)
+            image_path = image_url
+        elif image_file:
+            # Try to find image file
+            if images_dir:
+                image_path = os.path.join(images_dir, image_file)
+                if not os.path.exists(image_path):
+                    # Try current directory
+                    if os.path.exists(image_file):
+                        image_path = image_file
+                    else:
+                        raise FileNotFoundError(f"Image not found: {image_file}")
+            elif os.path.exists(image_file):
+                image_path = image_file
+            else:
+                raise FileNotFoundError(f"Image not found: {image_file}")
+        else:
+            raise ValueError("Either Image or ImageURL must be provided in CSV")
         
-        if images_dir and image_file:
-            image_path = os.path.join(images_dir, image_file)
-            if not os.path.exists(image_path):
-                # Try current directory
-                if os.path.exists(image_file):
-                    image_path = image_file
-                else:
-                    raise FileNotFoundError(f"Image not found: {image_file}")
-        elif image_file and os.path.exists(image_file):
-            image_path = image_file
+        # Step 1: Analyze image using Claude Vision API (same as single product)
+        if not image_path:
+            raise ValueError("No valid image path or URL found")
         
-        # Analyze image if available
-        image_attributes = {}
-        if image_path and os.path.exists(image_path):
-            image_analysis = self.image_analyzer.analyze_image(image_path)
-            image_attributes = image_analysis.get('attributes', {})
+        image_analysis = self.image_analyzer.analyze_image(image_path)
+        image_attributes = image_analysis.get('attributes', {})
         
-        # Generate faceted metadata
-        faceted_metadata = self.faceted_generator.generate_faceted_metadata(
-            image_attributes,
-            product_info=None,
-            csv_data=csv_row
-        )
-        
-        # Generate text (using CSV title if available)
+        # Step 2: Generate faceted metadata (same as single product)
         product_info = {
-            'brand': csv_row.get('Brand', ''),
-            'gender': csv_row.get('Gender', '')
+            'brand': brand,
+            'gender': gender,
+            'size': csv_row.get('Size', '').strip()  # Optional size
         }
         
-        title = csv_row.get('ProductTitle', '')
-        if not title:
-            title = self.text_generator.generate_title(product_info, image_attributes)
+        faceted_metadata = self.faceted_generator.generate_faceted_metadata(
+            image_attributes, product_info, None
+        )
         
+        # Step 3: Generate text (same as single product)
+        title = self.text_generator.generate_title(product_info, image_attributes)
         description = self.text_generator.generate_description(product_info, image_attributes)
-        bullets = self.text_generator.generate_bullet_points(product_info, image_attributes)
+        bullet_points = self.text_generator.generate_bullet_points(product_info, image_attributes)
         
-        # Compile complete metadata
+        # Step 4: Calculate confidence scores (same as single product)
+        temp_metadata = {
+            'faceted': faceted_metadata,
+            'descriptive': {
+                'title': title,
+                'description': description
+            }
+        }
+        confidence_scores = {}
+        if self.confidence_scorer:
+            confidence_scores = self.confidence_scorer.score_metadata(
+                temp_metadata, image_attributes, self.vocabulary_manager, product_info
+            )
+        
+        # Step 5: Validate against vocabulary (same as single product)
+        validation_results = {}
+        if self.vocabulary_manager:
+            faceted_data = faceted_metadata.get('faceted_metadata', {})
+            flat_facets = faceted_data.get('flat_facets', {})
+            hierarchical = faceted_data.get('hierarchical_facets', {})
+            
+            validation_results['gender'] = self.vocabulary_manager.validate('gender', faceted_metadata.get('gender', ''))
+            validation_results['item_type'] = self.vocabulary_manager.validate('item_type', faceted_metadata.get('item_type', ''))
+            validation_results['color'] = self.vocabulary_manager.validate('color', flat_facets.get('color', ''))
+            validation_results['material'] = self.vocabulary_manager.validate('material', flat_facets.get('material', ''))
+            
+            facet1 = hierarchical.get('facet_1_item_type', {})
+            if facet1:
+                hierarchy_valid, hierarchy_error = self.vocabulary_manager.validate_hierarchy(
+                    facet1.get('level_1', ''),
+                    facet1.get('level_2', ''),
+                    facet1.get('level_3', '')
+                )
+                validation_results['hierarchy'] = (hierarchy_valid, hierarchy_error if not hierarchy_valid else None, None)
+        
+        # Compile complete metadata (same structure as single product)
         metadata = {
-            # Faceted metadata (hierarchical + flat)
-            "faceted": faceted_metadata,
-            
-            # Descriptive metadata
-            "descriptive": {
-                "title": title,
-                "short_description": description[:150] + '...' if len(description) > 150 else description,
-                "long_description": description,
-                "bullet_points": bullets
+            'faceted': faceted_metadata,
+            'descriptive': {
+                'title': title,
+                'short_description': description[:150] + '...' if len(description) > 150 else description,
+                'long_description': description,
+                'bullet_points': bullet_points
             },
-            
-            # Source information
-            "source": {
-                "product_id": csv_row.get("ProductId", ""),
-                "image_file": image_file,
-                "image_url": csv_row.get("ImageURL", "")
+            'confidence_scores': confidence_scores,
+            'validation_results': validation_results,
+            'status': 'pending_review',
+            'source': {
+                'product_id': csv_row.get("ProductId", ""),
+                'image_file': image_file,
+                'image_url': image_url
             }
         }
         
@@ -172,18 +219,18 @@ class BulkProcessor:
             filepath = os.path.join('exports', filename)
             os.makedirs('exports', exist_ok=True)
             
-            # Flatten faceted metadata for CSV
+            # Flatten faceted metadata for CSV (matching simplified JSON structure)
             with open(filepath, 'w', newline='', encoding='utf-8') as f:
                 if not results:
                     return filepath
                 
-                # Get all possible fields
+                # Get all possible fields (matching the simplified JSON export)
                 fieldnames = [
                     'product_id', 'item_type', 'gender',
                     'facet1_level1', 'facet1_level2', 'facet1_level3', 'facet1_path',
                     'facet2_level1', 'facet2_level2', 'facet2_level3', 'facet2_path',
                     'color', 'material', 'pattern', 'size', 'brand',
-                    'title', 'category_path', 'tags'
+                    'title', 'short_description', 'long_description', 'bullet_points'
                 ]
                 
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -196,6 +243,11 @@ class BulkProcessor:
                     faceted = result.get('faceted', {}).get('faceted_metadata', {})
                     hierarchical = faceted.get('hierarchical_facets', {})
                     flat = faceted.get('flat_facets', {})
+                    descriptive = result.get('descriptive', {})
+                    
+                    # Format bullet points as semicolon-separated string
+                    bullets = descriptive.get('bullet_points', [])
+                    bullets_str = '; '.join(bullets) if isinstance(bullets, list) else str(bullets)
                     
                     row = {
                         'product_id': result.get('source', {}).get('product_id', ''),
@@ -214,9 +266,10 @@ class BulkProcessor:
                         'pattern': flat.get('pattern', ''),
                         'size': flat.get('size', ''),
                         'brand': flat.get('brand', ''),
-                        'title': result.get('descriptive', {}).get('title', ''),
-                        'category_path': result.get('classification', {}).get('hierarchy', {}).get('full_path', ''),
-                        'tags': ', '.join(result.get('classification', {}).get('tags', [])[:5])
+                        'title': descriptive.get('title', ''),
+                        'short_description': descriptive.get('short_description', ''),
+                        'long_description': descriptive.get('long_description', ''),
+                        'bullet_points': bullets_str
                     }
                     writer.writerow(row)
             

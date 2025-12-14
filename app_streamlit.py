@@ -43,9 +43,7 @@ def initialize_models():
         vocabulary_manager = VocabularyManager()
         confidence_scorer = ConfidenceScorer()
         bulk_processor = BulkProcessor(
-            image_analyzer, text_generator, None,  # classifier removed
-            None,  # attribute_extractor removed (redundant)
-            faceted_generator,
+            image_analyzer, text_generator, faceted_generator,
             vocabulary_manager, confidence_scorer
         )
         return {
@@ -95,7 +93,9 @@ def single_product_page(models):
     col1, col2 = st.columns(2)
     
     with col1:
-        brand = st.text_input("Brand *", help="Enter product brand", key="brand_input")
+        # Brand dropdown from vocabulary
+        brand_options = models['vocabulary_manager'].get_valid_options('brand')
+        brand = st.selectbox("Brand *", [""] + brand_options, key="brand_select", help="Select product brand from controlled vocabulary")
         # Gender dropdown from vocabulary
         gender_options = models['vocabulary_manager'].get_valid_options('gender')
         gender = st.selectbox("Gender *", [""] + gender_options, key="gender_select")
@@ -601,16 +601,25 @@ def bulk_upload_page(models):
     """Bulk CSV upload and processing"""
     st.header("Bulk Upload")
     
-    st.info("Upload a CSV file with product data. Columns: ProductId, Gender, Category, SubCategory, ProductType, Colour, Usage, ProductTitle, Image, ImageURL")
+    st.info("""
+    **CSV Format Required:**
+    - **Gender** (required): Men, Women, or Unisex
+    - **Brand** (required): Product brand name
+    - **Image** or **ImageURL** (required): Image file path or URL
+    - **Size** (optional): Product size
+    - **ProductId** (optional): Unique product identifier
+    
+    All other metadata (item type, color, material, style, descriptions, etc.) will be generated automatically using Claude Vision API.
+    """)
     
     uploaded_csv = st.file_uploader(
         "Upload CSV File",
         type=['csv'],
-        help="Upload CSV file with product data"
+        help="CSV with columns: Gender, Brand, Image (or ImageURL), Size (optional), ProductId (optional)"
     )
     
-    images_dir = st.text_input("Images Directory (Optional)", help="Path to directory containing product images")
-    limit = st.number_input("Limit (Optional)", min_value=1, value=None, help="Process only first N rows")
+    images_dir = st.text_input("Images Directory (Optional)", help="Path to directory containing product images (if Image column contains filenames)")
+    limit = st.number_input("Limit (Optional)", min_value=1, value=None, help="Process only first N rows (for testing)")
     
     if st.button("Process CSV", type="primary"):
         if not uploaded_csv:
@@ -658,13 +667,17 @@ def bulk_upload_page(models):
                 # Export options
                 if successful > 0:
                     st.subheader("Export Results")
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
                     
                     with col1:
                         if st.button("📥 Download as JSON"):
                             download_bulk_json(results)
                     
                     with col2:
+                        if st.button("📥 Download as CSV"):
+                            download_bulk_csv(results, models)
+                    
+                    with col3:
                         if st.button("📥 Download Validation CSV"):
                             download_validation_csv(results, models)
                 
@@ -719,11 +732,41 @@ def display_results_table(results):
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 def download_bulk_json(results):
-    """Download bulk results as JSON"""
+    """Download bulk results as JSON (simplified format, same as single product)"""
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename = f"bulk_metadata_{timestamp}.json"
     
-    json_str = json.dumps(results, indent=2, ensure_ascii=False)
+    # Create clean metadata structure (same as single product download)
+    clean_results = []
+    for result in results:
+        if 'error' in result:
+            clean_results.append({'error': result.get('error'), 'product_id': result.get('source', {}).get('product_id', '')})
+            continue
+        
+        clean_metadata = {
+            "faceted": {
+                "item_type": result.get('faceted', {}).get('item_type', ''),
+                "gender": result.get('faceted', {}).get('gender', ''),
+                "hierarchical_facets": result.get('faceted', {}).get('faceted_metadata', {}).get('hierarchical_facets', {}),
+                "flat_facets": {
+                    "brand": result.get('faceted', {}).get('faceted_metadata', {}).get('flat_facets', {}).get('brand', ''),
+                    "size": result.get('faceted', {}).get('faceted_metadata', {}).get('flat_facets', {}).get('size', ''),
+                    "color": result.get('faceted', {}).get('faceted_metadata', {}).get('flat_facets', {}).get('color', ''),
+                    "material": result.get('faceted', {}).get('faceted_metadata', {}).get('flat_facets', {}).get('material', ''),
+                    "pattern": result.get('faceted', {}).get('faceted_metadata', {}).get('flat_facets', {}).get('pattern', '')
+                }
+            },
+            "descriptive": {
+                "title": result.get('descriptive', {}).get('title', ''),
+                "short_description": result.get('descriptive', {}).get('short_description', ''),
+                "long_description": result.get('descriptive', {}).get('long_description', ''),
+                "bullet_points": result.get('descriptive', {}).get('bullet_points', [])
+            },
+            "product_id": result.get('source', {}).get('product_id', '')
+        }
+        clean_results.append(clean_metadata)
+    
+    json_str = json.dumps(clean_results, indent=2, ensure_ascii=False)
     
     st.download_button(
         label="📥 Download JSON File",

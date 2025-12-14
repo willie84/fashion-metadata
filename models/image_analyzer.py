@@ -8,6 +8,8 @@ import base64
 from PIL import Image
 import io
 from anthropic import Anthropic
+import requests
+from urllib.parse import urlparse
 
 
 class ImageAnalyzer:
@@ -30,16 +32,28 @@ class ImageAnalyzer:
         Analyze fashion product image and extract visual features using Claude Vision
         
         Args:
-            image_input: Path to the image file (str) or PIL Image object
+            image_input: Path to the image file (str), image URL (str starting with http:// or https://), or PIL Image object
             
         Returns:
             dict: Extracted visual features and descriptions
         """
         try:
             # Load and preprocess image
+            image_path = None
             if isinstance(image_input, str):
-                image = Image.open(image_input).convert("RGB")
-                image_path = image_input
+                # Check if it's a URL
+                parsed = urlparse(image_input)
+                if parsed.scheme in ('http', 'https'):
+                    # Download image from URL
+                    response = requests.get(image_input, timeout=30)
+                    response.raise_for_status()
+                    image = Image.open(io.BytesIO(response.content)).convert("RGB")
+                    # Extract extension from URL for media type
+                    image_path = image_input
+                else:
+                    # Local file path
+                    image = Image.open(image_input).convert("RGB")
+                    image_path = image_input
             elif isinstance(image_input, Image.Image):
                 image = image_input.convert("RGB")
                 image_path = None
@@ -47,9 +61,18 @@ class ImageAnalyzer:
                 raise ValueError(f"Unsupported image input type: {type(image_input)}")
             
             # Convert image to base64 for API
-            # Determine format from file extension or default to JPEG
+            # Determine format from file extension or URL, default to JPEG
             if image_path:
-                ext = image_path.lower().split('.')[-1]
+                # Check if it's a URL
+                parsed = urlparse(image_path) if isinstance(image_path, str) else None
+                if parsed and parsed.scheme in ('http', 'https'):
+                    # Extract extension from URL path
+                    path_part = parsed.path.lower()
+                    ext = path_part.split('.')[-1] if '.' in path_part else 'jpg'
+                else:
+                    # Local file path
+                    ext = image_path.lower().split('.')[-1]
+                
                 if ext in ['jpg', 'jpeg']:
                     format_type = "JPEG"
                     media_type = "image/jpeg"

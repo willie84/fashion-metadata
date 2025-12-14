@@ -55,7 +55,20 @@ class VocabularyManager:
             'materials': ['Cotton', 'Polyester', 'Denim', 'Leather'],
             'patterns': ['Solid', 'Striped', 'Floral', 'Geometric'],
             'usages': ['Casual', 'Formal', 'Sporty'],
-            'brands': []
+            'brands': [
+                'Adidas', 'Aeropostale', 'Allen', 'Allen Solly', 'American Eagle', 'Ant',
+                'Arrow', 'ASICS', 'Avengers', 'Banana Republic', 'Basics', 'Bata', 'Batman',
+                'Ben', 'Benetton', 'Btwin', 'Buckaroo', 'Calvin Klein', 'Carlton', 'Catwalk',
+                'Chhota Bheem', 'Clarks', 'Cobblerz', 'Converse', 'Coolers', 'Crocs', 'DC',
+                'Decathlon', 'Disney', 'Do', 'Doodle', 'Enroute', 'Estd.', 'Fabindia', 'FILA',
+                'Filac', 'Flying Machine', 'Force', 'Forever 21', 'Fortune', 'Franco', 'Ganuchi',
+                'Gap', 'GAS', 'Gini & Jony', 'Giny', 'Gliders', 'Globalite', 'Grendha', 'Guess',
+                'H&M', 'Hannah', 'Hollister', 'ID', 'Inc', 'Jockey', 'Kappa', 'Lacoste',
+                'Levi\'s', 'Marks & Spencer', 'Mufti', 'Nike', 'Old Navy', 'Pepe Jeans',
+                'Peter England', 'Provogue', 'Puma', 'Red Tape', 'Reebok', 'Skechers', 'Sparx',
+                'Tommy Hilfiger', 'UCB', 'Under Armour', 'Uniqlo', 'US Polo Assn', 'Van Heusen',
+                'Vans', 'Versace', 'Woodland', 'Wrangler', 'Yonex', 'Zara'
+            ]
         }
     
     def validate(self, field: str, value: str, context: Optional[Dict] = None) -> Tuple[bool, Optional[str], Optional[List[str]]]:
