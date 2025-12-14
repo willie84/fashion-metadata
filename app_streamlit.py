@@ -16,6 +16,7 @@ from models.faceted_metadata import FacetedMetadataGenerator
 from models.bulk_processor import BulkProcessor
 from models.vocabulary_manager import VocabularyManager
 from models.confidence_scorer import ConfidenceScorer
+from evaluate_ai_accuracy import AIAccuracyEvaluator
 
 # Page config
 st.set_page_config(
@@ -33,14 +34,17 @@ if 'current_metadata_id' not in st.session_state:
     st.session_state.current_metadata_id = None
 
 # Initialize models (cached)
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def initialize_models():
     """Initialize ML models"""
     try:
-        image_analyzer = ImageAnalyzer()
-        text_generator = TextGenerator()
-        faceted_generator = FacetedMetadataGenerator()
+        # Initialize vocabulary_manager first (single source of truth)
         vocabulary_manager = VocabularyManager()
+        
+        # Pass vocabulary_manager to all components that need it
+        image_analyzer = ImageAnalyzer(vocabulary_manager=vocabulary_manager)
+        text_generator = TextGenerator()
+        faceted_generator = FacetedMetadataGenerator(vocabulary_manager=vocabulary_manager)
         confidence_scorer = ConfidenceScorer()
         bulk_processor = BulkProcessor(
             image_analyzer, text_generator, faceted_generator,
@@ -71,13 +75,15 @@ def main():
     # Sidebar navigation
     page = st.sidebar.radio(
         "Navigation",
-        ["Single Product", "Bulk Upload"]
+        ["Single Product", "Bulk Upload", "AI Evaluation"]
     )
     
     if page == "Single Product":
         single_product_page(models)
-    else:
+    elif page == "Bulk Upload":
         bulk_upload_page(models)
+    else:
+        ai_evaluation_page()
 
 def single_product_page(models):
     """Single product upload and metadata generation"""
@@ -636,8 +642,31 @@ def bulk_upload_page(models):
                 with open(csv_path, 'wb') as f:
                     f.write(uploaded_csv.getbuffer())
                 
-                # Process CSV
-                results = models['bulk_processor'].process_csv(csv_path, images_dir, limit)
+                # Process CSV with progress bar
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                def update_progress(current, total):
+                    progress = current / total
+                    progress_bar.progress(progress)
+                    status_text.text(f"Processing {current}/{total} products...")
+                
+                # Check if process_csv supports progress_callback
+                import inspect
+                sig = inspect.signature(models['bulk_processor'].process_csv)
+                has_callback = 'progress_callback' in sig.parameters
+                
+                if has_callback:
+                    results = models['bulk_processor'].process_csv(
+                        csv_path, images_dir, limit, progress_callback=update_progress
+                    )
+                else:
+                    # Fallback for cached old version - process without progress callback
+                    st.warning("⚠️ Using cached version. Restart Streamlit for progress updates.")
+                    results = models['bulk_processor'].process_csv(csv_path, images_dir, limit)
+                
+                progress_bar.empty()
+                status_text.empty()
                 
                 # Store results in session state for display
                 st.session_state.bulk_results = results
@@ -667,64 +696,65 @@ def bulk_upload_page(models):
                 # Export options
                 if successful > 0:
                     st.subheader("Export Results")
-                    col1, col2, col3 = st.columns(3)
+                    st.info("💡 **For validation**: Download the AI-generated CSV below and compare it with your gold standard CSV using the evaluation script.")
+                    
+                    col1, col2 = st.columns(2)
                     
                     with col1:
-                        if st.button("📥 Download as JSON"):
-                            download_bulk_json(results)
+                        download_bulk_json(results)
                     
                     with col2:
-                        if st.button("📥 Download as CSV"):
-                            download_bulk_csv(results, models)
-                    
-                    with col3:
-                        if st.button("📥 Download Validation CSV"):
-                            download_validation_csv(results, models)
+                        download_bulk_csv(results, models)
                 
             except Exception as e:
                 st.error(f"Error processing CSV: {str(e)}")
                 st.exception(e)
 
 def display_results_table(results):
-    """Display detailed results table for manual validation"""
+    """Display detailed results table with AI-generated values only"""
     import pandas as pd
     
     # Prepare data for table
     table_data = []
     for result in results:
+        csv_data = result.get('csv_data', {})
+        
         if 'error' in result:
             table_data.append({
-                'Product ID': result.get('csv_data', {}).get('ProductId', 'N/A'),
+                'Product ID': csv_data.get('ProductId', 'N/A'),
                 'Status': '❌ Error',
                 'Error': result.get('error', 'Unknown error'),
-                'Original Title': result.get('csv_data', {}).get('ProductTitle', 'N/A'),
-                'Generated Title': 'N/A',
-                'Original Color': result.get('csv_data', {}).get('Colour', 'N/A'),
-                'Generated Color': 'N/A',
-                'Original Category': result.get('csv_data', {}).get('Category', 'N/A'),
-                'Generated Item Type': 'N/A'
+                'Item-type': 'N/A',
+                'Itemcategory': 'N/A',
+                'ProductType': 'N/A',
+                'Colour': 'N/A',
+                'Material': 'N/A',
+                'Pattern': 'N/A',
+                'Usage': 'N/A',
+                'Sub-Style': 'N/A',
+                'Specific Style': 'N/A'
             })
         else:
-            csv_data = result.get('csv_data', {})
-            faceted = result.get('faceted', {}).get('faceted_metadata', {})
-            flat = faceted.get('flat_facets', {})
-            hierarchical = faceted.get('hierarchical_facets', {})
+            faceted = result.get('faceted', {})
+            faceted_metadata = faceted.get('faceted_metadata', {})
+            flat = faceted_metadata.get('flat_facets', {})
+            hierarchical = faceted_metadata.get('hierarchical_facets', {})
             facet1 = hierarchical.get('facet_1_item_type', {})
+            facet2 = hierarchical.get('facet_2_style_usage', {})
             
             table_data.append({
                 'Product ID': csv_data.get('ProductId', 'N/A'),
                 'Status': '✅ Success',
                 'Error': '',
-                'Original Title': csv_data.get('ProductTitle', 'N/A'),
-                'Generated Title': result.get('descriptive', {}).get('title', 'N/A'),
-                'Original Color': csv_data.get('Colour', 'N/A'),
-                'Generated Color': flat.get('color', 'N/A'),
-                'Original Category': csv_data.get('Category', 'N/A'),
-                'Generated Item Type': facet1.get('level_1', 'N/A'),
-                'Generated Category': facet1.get('level_2', 'N/A'),
-                'Generated Product Type': facet1.get('level_3', 'N/A'),
-                'Generated Gender': result.get('faceted', {}).get('gender', 'N/A'),
-                'Original Gender': csv_data.get('Gender', 'N/A')
+                'Item-type': faceted.get('item_type', 'N/A'),
+                'Itemcategory': facet1.get('level_2', 'N/A'),
+                'ProductType': facet1.get('level_3', 'N/A'),
+                'Colour': flat.get('color', 'N/A'),
+                'Material': flat.get('material', 'N/A'),
+                'Pattern': flat.get('pattern', 'N/A'),
+                'Usage': facet2.get('level_1', 'N/A'),
+                'Sub-Style': facet2.get('level_2', 'N/A'),
+                'Specific Style': facet2.get('level_3', 'N/A')
             })
     
     if table_data:
@@ -777,136 +807,353 @@ def download_bulk_json(results):
     )
 
 def download_bulk_csv(results, models):
-    """Download bulk results as CSV"""
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = f"bulk_metadata_{timestamp}.csv"
-    
-    filepath = models['bulk_processor'].export_faceted_metadata(results, 'csv')
-    
-    with open(filepath, 'rb') as f:
-        csv_data = f.read()
-    
-    st.download_button(
-        label="📥 Download CSV File",
-        data=csv_data,
-        file_name=filename,
-        mime="text/csv",
-        key="download_bulk_csv"
-    )
-
-def download_validation_csv(results, models):
-    """Download validation CSV with original vs generated comparison"""
+    """Download AI-generated metadata as CSV matching exact column format"""
     import csv
     from io import StringIO
     
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = f"validation_results_{timestamp}.csv"
+    filename = f"ai_generated_metadata_{timestamp}.csv"
     
-    # Create CSV in memory
+    # Generate CSV in memory
     output = StringIO()
     
-    # Define columns for validation
-    fieldnames = [
-        'ProductId',
-        'Status',
-        'Original_Title',
-        'Generated_Title',
-        'Title_Match',
-        'Original_Gender',
-        'Generated_Gender',
-        'Gender_Match',
-        'Original_Color',
-        'Generated_Color',
-        'Color_Match',
-        'Original_Category',
-        'Generated_Item_Type',
-        'Generated_Category',
-        'Generated_Product_Type',
-        'Category_Match',
-        'Original_Usage',
-        'Generated_Style_Level1',
-        'Generated_Style_Level2',
-        'Generated_Style_Level3',
-        'Notes'
-    ]
-    
-    writer = csv.DictWriter(output, fieldnames=fieldnames)
-    writer.writeheader()
-    
-    for result in results:
-        csv_data = result.get('csv_data', {})
-        product_id = csv_data.get('ProductId', '')
+    if not results:
+        csv_str = ""
+    else:
+        # Exact column format as specified by user
+        fieldnames = [
+            'ProductId',
+            'Gender',
+            'Item-type',  # Apparel/Footwear
+            'Itemcategory',  # Topwear/Bottomwear/Shoes/etc
+            'ProductType',  # Tshirts/Jeans/Sandals/etc
+            'Colour',  # AI-generated color
+            'Pattern',  # AI-generated pattern
+            'Material',  # AI-generated material
+            'Brand',  # From input
+            'Usage',  # Style Level 1 (Casual/Formal/etc)
+            'substyle',  # Style Level 2
+            'specific-style',  # Style Level 3
+            'ProductTitle',  # AI-generated title
+            'Image',  # Image filename
+            'ImageURL'  # Image URL
+        ]
         
-        if 'error' in result:
-            writer.writerow({
-                'ProductId': product_id,
-                'Status': 'ERROR',
-                'Notes': result.get('error', 'Unknown error')
-            })
-        else:
-            faceted = result.get('faceted', {}).get('faceted_metadata', {})
-            flat = faceted.get('flat_facets', {})
-            hierarchical = faceted.get('hierarchical_facets', {})
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for result in results:
+            if 'error' in result:
+                continue
+            
+            # Extract metadata from result structure
+            csv_data = result.get('csv_data', {})
+            faceted = result.get('faceted', {})
+            faceted_metadata = faceted.get('faceted_metadata', {})
+            hierarchical = faceted_metadata.get('hierarchical_facets', {})
+            flat = faceted_metadata.get('flat_facets', {})
+            descriptive = result.get('descriptive', {})
+            source = result.get('source', {})
+            
             facet1 = hierarchical.get('facet_1_item_type', {})
             facet2 = hierarchical.get('facet_2_style_usage', {})
             
-            # Get original values
-            orig_title = csv_data.get('ProductTitle', '')
-            orig_gender = csv_data.get('Gender', '')
-            orig_color = csv_data.get('Colour', '')
-            orig_category = csv_data.get('Category', '')
-            orig_usage = csv_data.get('Usage', '')
-            
-            # Get generated values
-            gen_title = result.get('descriptive', {}).get('title', '')
-            gen_gender = result.get('faceted', {}).get('gender', '')
-            gen_color = flat.get('color', '')
-            gen_item_type = facet1.get('level_1', '')
-            gen_category = facet1.get('level_2', '')
-            gen_product_type = facet1.get('level_3', '')
-            gen_style_l1 = facet2.get('level_1', '')
-            gen_style_l2 = facet2.get('level_2', '')
-            gen_style_l3 = facet2.get('level_3', '')
-            
-            # Simple matching (case-insensitive)
-            title_match = 'YES' if orig_title.lower() in gen_title.lower() or gen_title.lower() in orig_title.lower() else 'NO'
-            gender_match = 'YES' if orig_gender.lower() == gen_gender.lower() else 'NO'
-            color_match = 'YES' if orig_color.lower() == gen_color.lower() else 'NO'
-            category_match = 'YES' if orig_category.lower() == gen_category.lower() or orig_category.lower() == gen_item_type.lower() else 'NO'
-            
-            writer.writerow({
-                'ProductId': product_id,
-                'Status': 'SUCCESS',
-                'Original_Title': orig_title,
-                'Generated_Title': gen_title,
-                'Title_Match': title_match,
-                'Original_Gender': orig_gender,
-                'Generated_Gender': gen_gender,
-                'Gender_Match': gender_match,
-                'Original_Color': orig_color,
-                'Generated_Color': gen_color,
-                'Color_Match': color_match,
-                'Original_Category': orig_category,
-                'Generated_Item_Type': gen_item_type,
-                'Generated_Category': gen_category,
-                'Generated_Product_Type': gen_product_type,
-                'Category_Match': category_match,
-                'Original_Usage': orig_usage,
-                'Generated_Style_Level1': gen_style_l1,
-                'Generated_Style_Level2': gen_style_l2,
-                'Generated_Style_Level3': gen_style_l3,
-                'Notes': ''
-            })
+            row = {
+                'ProductId': source.get('product_id', csv_data.get('ProductId', '')),
+                'Gender': faceted.get('gender', csv_data.get('Gender', '')),
+                'Item-type': faceted.get('item_type', ''),  # Apparel/Footwear
+                'Itemcategory': facet1.get('level_2', ''),  # Topwear/Bottomwear/Shoes/etc
+                'ProductType': facet1.get('level_3', ''),  # Tshirts/Jeans/Sandals/etc
+                'Colour': flat.get('color', ''),
+                'Pattern': flat.get('pattern', ''),
+                'Material': flat.get('material', ''),
+                'Brand': flat.get('brand', csv_data.get('Brand', '')),
+                'Usage': facet2.get('level_1', ''),  # Casual/Formal/Sporty/etc
+                'substyle': facet2.get('level_2', ''),
+                'specific-style': facet2.get('level_3', ''),
+                'ProductTitle': descriptive.get('title', ''),
+                'Image': source.get('image_file', csv_data.get('Image', '')),
+                'ImageURL': source.get('image_url', csv_data.get('ImageURL', ''))
+            }
+            writer.writerow(row)
     
     csv_str = output.getvalue()
     
     st.download_button(
-        label="📥 Download Validation CSV",
+        label="📥 Download AI-Generated CSV",
         data=csv_str,
         file_name=filename,
         mime="text/csv",
-        key="download_validation_csv"
+        help="Download AI-generated metadata CSV. Use this with your gold standard CSV for validation.",
+        key="download_bulk_csv"
     )
+
+def ai_evaluation_page():
+    """AI Accuracy Evaluation Page"""
+    st.header("📊 AI Accuracy Evaluation")
+    st.markdown("Compare AI-generated metadata with gold standard CSV")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Gold Standard CSV")
+        gold_csv = st.file_uploader(
+            "Upload Gold Standard CSV",
+            type=['csv'],
+            help="Upload your gold standard CSV with ground truth metadata",
+            key="gold_csv"
+        )
+    
+    with col2:
+        st.subheader("AI-Generated CSV")
+        ai_csv = st.file_uploader(
+            "Upload AI-Generated CSV",
+            type=['csv'],
+            help="Upload AI-generated CSV from bulk processing",
+            key="ai_csv"
+        )
+    
+    if gold_csv and ai_csv:
+        if st.button("🚀 Run Evaluation", type="primary"):
+            with st.spinner("Evaluating AI accuracy..."):
+                try:
+                    # Save uploaded files temporarily
+                    import tempfile
+                    import csv
+                    import io
+                    
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        gold_path = os.path.join(tmpdir, "gold_standard.csv")
+                        ai_path = os.path.join(tmpdir, "ai_generated.csv")
+                        
+                        with open(gold_path, "wb") as f:
+                            f.write(gold_csv.getbuffer())
+                        
+                        with open(ai_path, "wb") as f:
+                            f.write(ai_csv.getbuffer())
+                        
+                        # Load CSV data into dictionaries for detailed display
+                        gold_csv_data = {}
+                        ai_csv_data = {}
+                        
+                        gold_csv.seek(0)
+                        ai_csv.seek(0)
+                        
+                        gold_reader = csv.DictReader(io.StringIO(gold_csv.getvalue().decode('utf-8')))
+                        for row in gold_reader:
+                            product_id = row.get('ProductId', '')
+                            if product_id:
+                                gold_csv_data[product_id] = row
+                        
+                        ai_reader = csv.DictReader(io.StringIO(ai_csv.getvalue().decode('utf-8')))
+                        for row in ai_reader:
+                            product_id = row.get('ProductId', '')
+                            if product_id:
+                                ai_csv_data[product_id] = row
+                        
+                        # Store CSV data in session state
+                        st.session_state['gold_csv_data'] = gold_csv_data
+                        st.session_state['ai_csv_data'] = ai_csv_data
+                        
+                        # Run evaluation
+                        evaluator = AIAccuracyEvaluator()
+                        results = evaluator.evaluate_batch(gold_path, ai_path)
+                        
+                        # Store results in session state
+                        st.session_state['evaluation_results'] = results
+                        
+                        st.success("✅ Evaluation complete!")
+                
+                except Exception as e:
+                    st.error(f"Error during evaluation: {str(e)}")
+                    st.exception(e)
+    
+    # Display results if available
+    if 'evaluation_results' in st.session_state:
+        results = st.session_state['evaluation_results']
+        display_evaluation_results(results)
+
+def display_evaluation_results(results):
+    """Display evaluation results"""
+    st.header("📈 Evaluation Results")
+    
+    # Summary metrics
+    if 'summary' in results and results['summary']:
+        st.subheader("Overall Accuracy")
+        metrics = results['summary']
+        
+        if 'overall' in metrics:
+            st.metric("Overall Accuracy", f"{metrics['overall']['accuracy']:.1f}%")
+        
+        st.subheader("Attribute-Level Accuracy")
+        
+        # Map attribute names to user-friendly names
+        attribute_names = {
+            'item_type': 'Item-type',
+            'facet1_level1': 'Item-type (Facet1 Level1)',
+            'facet1_level2': 'Item-category (Facet1 Level2)',
+            'facet1_level3': 'ProductType (Facet1 Level3)',
+            'facet2_level1': 'Usage (Facet2 Level1)',
+            'facet2_level2': 'Sub-style (Facet2 Level2)',
+            'facet2_level3': 'Specific Style (Facet2 Level3)',
+            'color': 'Colour',
+            'material': 'Material',
+            'pattern': 'Pattern'
+        }
+        
+        # Create metrics dataframe
+        metrics_data = []
+        for attr, m in metrics.items():
+            if attr != 'overall':
+                display_name = attribute_names.get(attr, attr.replace('_', ' ').title())
+                metrics_data.append({
+                    'Attribute': display_name,
+                    'Accuracy (%)': f"{m['accuracy']:.1f}",
+                    'Matches': m['matches'],
+                    'Total': m['total']
+                })
+        
+        if metrics_data:
+            df_metrics = pd.DataFrame(metrics_data)
+            st.dataframe(df_metrics, use_container_width=True)
+            
+            # Bar chart
+            chart_data = pd.DataFrame({
+                'Attribute': [m['Attribute'] for m in metrics_data],
+                'Accuracy (%)': [float(m['Accuracy (%)']) for m in metrics_data]
+            })
+            st.bar_chart(chart_data.set_index('Attribute'))
+    
+    # Detailed results
+    if 'detailed_results' in results and results['detailed_results']:
+        st.subheader("Detailed Comparison")
+        
+        # Load original CSVs to get full row data
+        gold_csv_data = st.session_state.get('gold_csv_data', {})
+        ai_csv_data = st.session_state.get('ai_csv_data', {})
+        
+        # Create detailed results dataframe
+        detailed_data = []
+        for r in results['detailed_results']:
+            product_id = r.get('product_id', '')
+            
+            # Get original row data
+            gold_row = gold_csv_data.get(product_id, {})
+            ai_row = ai_csv_data.get(product_id, {})
+            
+            row = {
+                'ProductId': product_id,
+                'Gender_Gold': gold_row.get('Gender', ''),
+                'Gender_AI': ai_row.get('Gender', ''),
+                'Brand_Gold': gold_row.get('Brand', ''),
+                'Brand_AI': ai_row.get('Brand', ''),
+            }
+            
+            # Item-type comparison
+            item_type_comp = r.get('item_type', {})
+            row['Item-type_Gold'] = item_type_comp.get('gold', '')
+            row['Item-type_AI'] = item_type_comp.get('ai', '')
+            row['Item-type_Match'] = '✅' if item_type_comp.get('match') else '❌'
+            
+            # Itemcategory comparison (facet1_level2)
+            category_comp = r.get('facet1_level2', {})
+            row['Itemcategory_Gold'] = category_comp.get('gold', '')
+            row['Itemcategory_AI'] = category_comp.get('ai', '')
+            row['Itemcategory_Match'] = '✅' if category_comp.get('match') else '❌'
+            
+            # ProductType comparison (facet1_level3)
+            product_type_comp = r.get('facet1_level3', {})
+            row['ProductType_Gold'] = product_type_comp.get('gold', '')
+            row['ProductType_AI'] = product_type_comp.get('ai', '')
+            row['ProductType_Match'] = '✅' if product_type_comp.get('match') else '❌'
+            
+            # Colour comparison
+            color_comp = r.get('color', {})
+            row['Colour_Gold'] = color_comp.get('gold', '')
+            row['Colour_AI'] = color_comp.get('ai', '')
+            row['Colour_Match'] = '✅' if color_comp.get('match') else '❌'
+            
+            # Pattern comparison
+            pattern_comp = r.get('pattern', {})
+            row['Pattern_Gold'] = pattern_comp.get('gold', '')
+            row['Pattern_AI'] = pattern_comp.get('ai', '')
+            row['Pattern_Match'] = '✅' if pattern_comp.get('match') else '❌'
+            
+            # Material comparison
+            material_comp = r.get('material', {})
+            row['Material_Gold'] = material_comp.get('gold', '')
+            row['Material_AI'] = material_comp.get('ai', '')
+            row['Material_Match'] = '✅' if material_comp.get('match') else '❌'
+            
+            # Usage comparison (facet2_level1)
+            usage_comp = r.get('facet2_level1', {})
+            row['Usage_Gold'] = usage_comp.get('gold', '')
+            row['Usage_AI'] = usage_comp.get('ai', '')
+            row['Usage_Match'] = '✅' if usage_comp.get('match') else '❌'
+            
+            # Substyle comparison (facet2_level2)
+            substyle_comp = r.get('facet2_level2', {})
+            row['Substyle_Gold'] = substyle_comp.get('gold', '')
+            row['Substyle_AI'] = substyle_comp.get('ai', '')
+            row['Substyle_Match'] = '✅' if substyle_comp.get('match') else '❌'
+            
+            # Specific Style comparison (facet2_level3)
+            specific_style_comp = r.get('facet2_level3', {})
+            row['Specific_Style_Gold'] = specific_style_comp.get('gold', '')
+            row['Specific_Style_AI'] = specific_style_comp.get('ai', '')
+            row['Specific_Style_Match'] = '✅' if specific_style_comp.get('match') else '❌'
+            
+            # Additional columns from original CSVs
+            row['ProductTitle_Gold'] = gold_row.get('ProductTitle', '')
+            row['ProductTitle_AI'] = ai_row.get('ProductTitle', '')
+            row['Image_Gold'] = gold_row.get('Image', '')
+            row['Image_AI'] = ai_row.get('Image', '')
+            row['ImageURL_Gold'] = gold_row.get('ImageURL', '')
+            row['ImageURL_AI'] = ai_row.get('ImageURL', '')
+            
+            detailed_data.append(row)
+        
+        if detailed_data:
+            df_detailed = pd.DataFrame(detailed_data)
+            st.dataframe(df_detailed, use_container_width=True, height=400)
+            
+            # Download button
+            csv_str = df_detailed.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Detailed Results CSV",
+                data=csv_str,
+                file_name=f"evaluation_detailed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+    
+    # Errors
+    if 'errors' in results and results['errors']:
+        st.subheader("⚠️ Errors")
+        st.warning(f"Found {len(results['errors'])} errors during evaluation")
+        df_errors = pd.DataFrame(results['errors'])
+        st.dataframe(df_errors, use_container_width=True)
+    
+    # Missing products
+    if 'missing_products' in results and results['missing_products']:
+        st.subheader("⚠️ Missing Products")
+        st.warning(f"{len(results['missing_products'])} products in gold standard not found in AI CSV")
+        st.write(results['missing_products'][:10])
+        if len(results['missing_products']) > 10:
+            st.write(f"... and {len(results['missing_products']) - 10} more")
+    
+    # Summary stats
+    st.subheader("Summary Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Processed", results.get('total_processed', 0))
+    with col2:
+        st.metric("Total Errors", results.get('total_errors', 0))
+    with col3:
+        st.metric("Missing Products", len(results.get('missing_products', [])))
+    with col4:
+        if results.get('total_processed', 0) > 0:
+            success_rate = ((results.get('total_processed', 0) - results.get('total_errors', 0)) / results.get('total_processed', 1)) * 100
+            st.metric("Success Rate", f"{success_rate:.1f}%")
 
 if __name__ == "__main__":
     main()

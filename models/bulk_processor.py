@@ -1,53 +1,30 @@
-"""
-Bulk Processing Module
-Processes CSV files and generates metadata for multiple products
-"""
-
 import csv
 import os
 from pathlib import Path
 
 
 class BulkProcessor:
-    """Processes bulk uploads from CSV files"""
-    
     def __init__(self, image_analyzer, text_generator, faceted_generator, vocabulary_manager=None, confidence_scorer=None):
-        """
-        Initialize bulk processor
-        
-        Args:
-            image_analyzer: ImageAnalyzer instance (uses Claude Vision API)
-            text_generator: TextGenerator instance
-            faceted_generator: FacetedMetadataGenerator instance
-            vocabulary_manager: Optional VocabularyManager instance
-            confidence_scorer: Optional ConfidenceScorer instance
-        """
         self.image_analyzer = image_analyzer
         self.text_generator = text_generator
         self.faceted_generator = faceted_generator
         self.vocabulary_manager = vocabulary_manager
         self.confidence_scorer = confidence_scorer
     
-    def process_csv(self, csv_path, images_dir=None, limit=None):
-        """
-        Process CSV file and generate metadata for all products
-        
-        Args:
-            csv_path: Path to CSV file
-            images_dir: Directory containing images (optional)
-            limit: Maximum number of products to process (for testing)
-            
-        Returns:
-            list: List of generated metadata dictionaries
-        """
+    def process_csv(self, csv_path, images_dir=None, limit=None, progress_callback=None):
         results = []
         
         with open(csv_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
+            rows = list(reader)
+            total = len(rows) if not limit else min(limit, len(rows))
             
-            for idx, row in enumerate(reader):
+            for idx, row in enumerate(rows):
                 if limit and idx >= limit:
                     break
+                
+                if progress_callback:
+                    progress_callback(idx + 1, total)
                 
                 try:
                     metadata = self.process_single_product(row, images_dir)
@@ -55,7 +32,6 @@ class BulkProcessor:
                     metadata['csv_data'] = row
                     results.append(metadata)
                 except Exception as e:
-                    # Error is captured in result dict
                     results.append({
                         'error': str(e),
                         'csv_row_index': idx + 1,
@@ -65,20 +41,6 @@ class BulkProcessor:
         return results
     
     def process_single_product(self, csv_row, images_dir=None):
-        """
-        Process a single product from CSV row - replicates single image flow
-        
-        CSV should only contain: Gender, Brand, Image (path or URL)
-        Everything else is generated automatically using Claude Vision API
-        
-        Args:
-            csv_row: Dictionary with CSV row data (must have: Gender, Brand, Image or ImageURL)
-            images_dir: Directory containing images (if Image is a filename)
-            
-        Returns:
-            dict: Generated metadata (same structure as single product)
-        """
-        # Get required inputs: gender, brand, image
         gender = csv_row.get("Gender", "").strip()
         brand = csv_row.get("Brand", "").strip()
         image_file = csv_row.get("Image", "").strip()
@@ -87,17 +49,13 @@ class BulkProcessor:
         if not gender or not brand:
             raise ValueError("Gender and Brand are required in CSV")
         
-        # Determine image path/URL
         image_path = None
         if image_url:
-            # Use URL directly (will be handled by image_analyzer if it supports URLs)
             image_path = image_url
         elif image_file:
-            # Try to find image file
             if images_dir:
                 image_path = os.path.join(images_dir, image_file)
                 if not os.path.exists(image_path):
-                    # Try current directory
                     if os.path.exists(image_file):
                         image_path = image_file
                     else:
@@ -109,30 +67,26 @@ class BulkProcessor:
         else:
             raise ValueError("Either Image or ImageURL must be provided in CSV")
         
-        # Step 1: Analyze image using Claude Vision API (same as single product)
         if not image_path:
             raise ValueError("No valid image path or URL found")
         
         image_analysis = self.image_analyzer.analyze_image(image_path)
         image_attributes = image_analysis.get('attributes', {})
         
-        # Step 2: Generate faceted metadata (same as single product)
         product_info = {
             'brand': brand,
             'gender': gender,
-            'size': csv_row.get('Size', '').strip()  # Optional size
+            'size': csv_row.get('Size', '').strip()
         }
         
         faceted_metadata = self.faceted_generator.generate_faceted_metadata(
             image_attributes, product_info, None
         )
         
-        # Step 3: Generate text (same as single product)
         title = self.text_generator.generate_title(product_info, image_attributes)
         description = self.text_generator.generate_description(product_info, image_attributes)
         bullet_points = self.text_generator.generate_bullet_points(product_info, image_attributes)
         
-        # Step 4: Calculate confidence scores (same as single product)
         temp_metadata = {
             'faceted': faceted_metadata,
             'descriptive': {
@@ -146,7 +100,6 @@ class BulkProcessor:
                 temp_metadata, image_attributes, self.vocabulary_manager, product_info
             )
         
-        # Step 5: Validate against vocabulary (same as single product)
         validation_results = {}
         if self.vocabulary_manager:
             faceted_data = faceted_metadata.get('faceted_metadata', {})
@@ -167,7 +120,6 @@ class BulkProcessor:
                 )
                 validation_results['hierarchy'] = (hierarchy_valid, hierarchy_error if not hierarchy_valid else None, None)
         
-        # Compile complete metadata (same structure as single product)
         metadata = {
             'faceted': faceted_metadata,
             'descriptive': {
@@ -189,16 +141,6 @@ class BulkProcessor:
         return metadata
     
     def export_faceted_metadata(self, results, output_format='json'):
-        """
-        Export faceted metadata in various formats
-        
-        Args:
-            results: List of metadata dictionaries
-            output_format: 'json' or 'csv'
-            
-        Returns:
-            str: Path to exported file
-        """
         from datetime import datetime
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
@@ -219,12 +161,10 @@ class BulkProcessor:
             filepath = os.path.join('exports', filename)
             os.makedirs('exports', exist_ok=True)
             
-            # Flatten faceted metadata for CSV (matching simplified JSON structure)
             with open(filepath, 'w', newline='', encoding='utf-8') as f:
                 if not results:
                     return filepath
                 
-                # Get all possible fields (matching the simplified JSON export)
                 fieldnames = [
                     'product_id', 'item_type', 'gender',
                     'facet1_level1', 'facet1_level2', 'facet1_level3', 'facet1_path',
@@ -245,7 +185,6 @@ class BulkProcessor:
                     flat = faceted.get('flat_facets', {})
                     descriptive = result.get('descriptive', {})
                     
-                    # Format bullet points as semicolon-separated string
                     bullets = descriptive.get('bullet_points', [])
                     bullets_str = '; '.join(bullets) if isinstance(bullets, list) else str(bullets)
                     
